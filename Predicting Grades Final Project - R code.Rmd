@@ -1,0 +1,146 @@
+---
+title: "Final Project - R code"
+author: "Leah Simko, Saoirse Hopp, Meghan Grogan"
+date: "2024-04-02"
+output: word_document
+---
+
+# Load in the data
+```{r}
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library("neuralnet")
+
+setwd("~/Library/CloudStorage/OneDrive-Personal/School Documents/7. PITT Spring 2024/4. BUSQOM 1760/Project")
+
+student = read.csv("student-mat.csv", stringsAsFactors = TRUE)
+student = na.omit(student)
+
+str(student)
+
+dat = as.data.frame(model.matrix(~., student))[, -1]
+
+str(dat)
+```
+
+# Random Forest
+```{r}
+dat$G3 = as.numeric(dat$G3)
+
+set.seed(123, sample.kind = "Rejection")
+spl = sample(nrow(dat),0.8*nrow(dat))
+
+train.set = dat[spl,]
+test.set = dat[-spl,]
+
+colnames(train.set)
+
+excl = c(31:33)
+
+x = train.set[,-excl]
+y = train.set$G3
+
+set.seed(123, sample.kind = "Rejection")
+tuneRF(x, y, mrtyStart = 14, stepFactor = 2, ntreeTry = 100, nodesize = 300, improve = 0.001)
+# mtry = 26 is best, lowest error
+
+set.seed(123, sample.kind = "Rejection")
+rf = randomForest(data = train.set, G3 ~. -G1 -G2, ntree = 100, nodesize = 300, mtry = 26)
+
+plot(rf)
+
+varImpPlot(rf)
+
+test.set$pred.rf = predict(rf, newdata = test.set)
+SSE = sum((test.set$G3 - test.set$pred.rf)^2)
+mean = mean(train.set$G3)
+SST = sum((test.set$G3 - mean)^2)
+OSR2 = 1 - SSE/SST
+OSR2 # 0.1015758, 10.2%
+```
+
+# Regression Tree
+```{r}
+set.seed(123, sample.kind = "Rejection")
+tree.cv = rpart(data = train.set, G3 ~. -G1 -G2, method = "anova", minbucket = 10, cp = 0)
+plotcp(tree.cv) # 0.047
+
+reg.tree = rpart(data = train.set, G3 ~. -G1 -G2, method = "anova", minbucket = 10, cp = 0.047)
+prp(reg.tree, extra=101)
+
+test.set$pred.regtree = predict(reg.tree, newdata = test.set)
+SSE = sum((test.set$G3 - test.set$pred.regtree)^2)
+SST = sum((test.set$G3 - mean)^2)
+OSR2 = 1 - SSE/SST
+OSR2 # 0.1365442, 13.7%
+```
+
+## Linear Regression
+```{r}
+linreg = lm(data = dat, G3 ~. -G1 -G2)
+summary(linreg)
+
+linreg = lm(data = dat, G3 ~ failures + absences + goout + failures*absences)
+summary(linreg)
+
+test.set$pred.linreg = predict(linreg, newdata = test.set)
+SSE = sum((test.set$G3 - test.set$pred.rf)^2)
+SST = sum((test.set$G3 - mean)^2)
+OSR2 = 1 - SSE/SST
+OSR2
+```
+
+# ANN
+```{r}
+set.seed(123, sample.kind = "Rejection")
+spl = sample(nrow(dat), 0.8*nrow(dat)) 
+intermediate = dat[spl,]
+test = dat[-spl,]
+
+set.seed(123, sample.kind = "Rejection")
+spl2 = sample(nrow(intermediate), 2/3*nrow(intermediate)) 
+train = intermediate[spl2,]
+valid = intermediate[-spl2,]
+
+maxVals = apply(train, 2, max)
+minVals = apply(train, 2, min)
+
+scaled_train = as.data.frame(scale(train, center = minVals, scale = maxVals - minVals))
+scaled_valid = as.data.frame(scale(valid, center = minVals, scale = maxVals - minVals))
+scaled_test = as.data.frame(scale(test, center = minVals, scale = maxVals - minVals))
+
+set.seed(123, sample.kind="Rejection")
+neural = neuralnet(G3 ~ failures + absences + goout, data = scaled_train, hidden=c(4,3), linear.output=TRUE)
+
+plot(neural)
+
+pred.valid = predict(neural, newdata=scaled_valid)
+
+summary(pred.valid)
+
+m = min(train$G3)
+M = max(train$G3)
+
+valid.pred.nn = (pred.valid * (M - m)) + m
+
+summary(valid.pred.nn)
+
+train.mean = mean(train$G3)
+
+SSE.valid = sum((valid.pred.nn - valid$G3)^2)
+SST.valid = sum((train.mean - valid$G3)^2)
+OSR2 = 1 - SSE.valid/SST.valid
+OSR2
+
+scaled_nonTest = rbind(scaled_train, scaled_valid)
+pred.test = predict(neural, scaled_test)
+test.pred.final = pred.test * (M - m) + m
+inter.mean = mean(intermediate$G3)
+
+SSE.test = sum((test.pred.final - test$G3)^2)
+SST.test = sum((inter.mean - test$G3)^2)
+1 - SSE.test/SST.test
+```
+
+
