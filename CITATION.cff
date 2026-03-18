@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use this dataset, please cite it as below."
+type: dataset
+authors:
+  - given-names: "UCI Machine Learning"
+title: "student-mat"
+version: 1.0.0
+url: "https://www.kaggle.com/datasets/uciml/student-alcohol-consumption?resource=download"
